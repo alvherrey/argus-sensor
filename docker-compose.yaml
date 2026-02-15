@@ -1,0 +1,26 @@
+services:
+  argus:
+    build: .
+    image: argus:latest
+    container_name: argus
+    network_mode: host
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    security_opt:
+      - apparmor:unconfined
+    init: true
+    stop_signal: SIGINT
+    stop_grace_period: 5s
+    restart: "no"
+    volumes:
+      - ./argus-data:/var/log/argus
+      - ./argus.conf:/etc/argus.conf:ro
+      - ./pcap:/pcap:ro
+    command: ["-i","${INTERFACE}","-w","/var/log/argus/argus.out","-P","${PORT}","--","ip or arp"]
+    healthcheck:
+      test: ["CMD-SHELL", "bash -lc 'exec 3<>/dev/tcp/127.0.0.1/561'"]
+      interval: 30s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
