@@ -25,9 +25,13 @@ radium (puerto 562, hub central)
     ↓
     ├─→ rasplit → archivos .out (COMPLETOS: payload + enrich)
     │                ↓
-    │           Batch ML (hourly/daily/weekly)
+    │      build_l2_features.py (opcional) → Parquet de features
     │                ↓
-    │           Postgres (alertas)
+    │      score_shadowit.py (opcional) → score Parquet
+    │                ↓
+    │      shadowit_score / shadowit_features_top → InfluxDB
+    │                ↓
+    │           Grafana alerting + backtesting
     │
     └─→ rastrip (quita payload) → racluster (agrega) → rabins (binning 1m)
                                         ↓
@@ -40,9 +44,21 @@ radium (puerto 562, hub central)
 
 | Componente | Contenido | Tamaño | Retención | Uso |
 |------------|-----------|--------|-----------|-----|
-| **Archivos .out** | Headers + Payload + GeoIP | 5GB/día | 90 días | ML batch, análisis forense |
-| **InfluxDB** | Headers + GeoIP (sin payload) | 2GB/día | 30 días | Dashboards tiempo real |
-| **Postgres** | Solo alertas ML | 10MB/día | 1 año | Aplicación de alertas |
+| **Archivos .out** | Headers + Payload + GeoIP | 5GB/día | 90 días | SoT, forense, reproceso |
+| **Parquet de features (opcional)** | Features por ventana/identidad | Depende de ventana | 90-365 días | Entrenamiento y backtesting |
+| **Parquet de score (opcional)** | `score`, `severity`, `reason_1..3` | Bajo | 90-365 días | Trazabilidad del modelo |
+| **InfluxDB** | Series para dashboards (agregadas) | 2GB/día | 30 días | Visualización/alertas |
+
+### Modelo simple en esta rama
+
+Estado real actual:
+
+1. Guardas `.out` enriquecido en `argus-data/archive/` (base operativa).
+2. Sirves realtime con Influx/Grafana (`argus_flows`).
+3. Si haces ML, generas Parquet de features en `argus-data/l2_features/`.
+4. Si haces scoring, generas score y lo publicas a Influx (`shadowit_score`).
+
+No necesitas separar stores extra para operar hoy.
 
 ---
 
@@ -180,6 +196,75 @@ systemctl restart telegraf
 
 ---
 
+## 🧠 Dataset de Features (Parquet, opcional)
+
+El repositorio incluye un pipeline opcional para generar features de Shadow IT desde
+los archivos Argus rotados (`argus-data/archive`).
+
+### Script
+
+- `scripts/build_l2_features.py`
+
+### Dependencia
+
+```bash
+python3 -m pip install -r requirements-l2.txt
+```
+
+### Ejecución base
+
+```bash
+python3 scripts/build_l2_features.py \
+  --input-root argus-data/archive \
+  --output-root argus-data/l2_features \
+  --site madrid-dc1 \
+  --window 5m \
+  --feature-version shadowit-v1
+```
+
+Salida:
+
+- Parquet particionado: `argus-data/l2_features/dt=YYYY-MM-DD/hour=HH/`
+- Estado incremental: `argus-data/l2_features/_state/processed_files.json`
+- Manifest de run: `argus-data/l2_features/_manifests/*.json`
+
+Ver guía completa en `docs/L2_FEATURE_STORE.md`.
+Handover de arquitectura para desarrollo: `docs/HANDOVER-SHADOWIT-ARCHITECTURE.md`.
+Guía de scoring y esquema Influx: `docs/ML_SCORING.md`.
+
+---
+
+## 🤖 Pipeline ML (features + scoring)
+
+Puedes ejecutar toda la parte ML en un solo comando:
+
+```bash
+./scripts/run-ml-pipeline.sh
+```
+
+`run-ml-pipeline.sh` carga `.env` automaticamente si el archivo existe.
+
+Este script hace:
+
+1. `scripts/build_l2_features.py` -> `argus-data/l2_features/`
+2. `scripts/score_shadowit.py` -> `argus-data/shadowit_scores/`
+3. (Opcional) publica `shadowit_score` y `shadowit_features_top` en Influx.
+
+Variables relevantes en `.env`:
+
+- `SITE`, `WINDOW`, `FEATURE_VERSION`
+- `MODEL_VERSION`, `MODEL_CONFIG`
+- `PUBLISH_SCORE_TO_INFLUX`, `PUBLISH_FEATURES_TOP`, `ONLY_ANOMALIES`
+- `INFLUXDB_URL`, `INFLUXDB_ORG`, `INFLUXDB_BUCKET_SHADOWIT`, `INFLUXDB_TOKEN`
+
+Mediciones recomendadas en Influx:
+
+1. `argus_flows`: telemetría operativa en tiempo real (pipeline telegraf actual).
+2. `shadowit_score`: score por identidad/ventana para alertas.
+3. `shadowit_features_top`: pocas features explicativas del score.
+
+---
+
 ## 📊 Casos de Uso
 
 ### 1. Batch ML para detección de Shadow IT
@@ -260,14 +345,17 @@ AND time > now() - 1h
 El script `cleanup-archives.sh` gestiona archivos antiguos:
 
 ```bash
-# Default: comprimir archivos >2 días, eliminar archivos >30 días
+# Default: comprimir archivos >2 días, eliminar archivos >90 días
 ./cleanup-archives.sh
 
 # Retención personalizada (7 días)
 RETENTION_DAYS=7 ./cleanup-archives.sh
 
 # Sin compresión
-COMPRESS=no RETENTION_DAYS=30 ./cleanup-archives.sh
+COMPRESS=no RETENTION_DAYS=90 ./cleanup-archives.sh
+
+# Cambiar umbral de compresión
+COMPRESS_AFTER_DAYS=1 ./cleanup-archives.sh
 ```
 
 ### Cron para limpieza diaria

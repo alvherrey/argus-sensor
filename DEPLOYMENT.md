@@ -78,16 +78,16 @@ files = ["/ruta/completa/a/argus-sensor/argus-data/argus-telegraf.pipe"]
 #         Reemplazar con tu path absoluto (pwd en el directorio del repo)
 ```
 
-**Ejemplo para usuario 'alvaro':**
+**Ejemplo para este workspace:**
 
 ```bash
 # Obtener ruta absoluta
-cd /home/alvaro/Desktop/work/argus/git/argus-sensor
+cd /Users/alvaro/Development/lab/argus-sensor
 pwd
-# Output: /home/alvaro/Desktop/work/argus/git/argus-sensor
+# Output: /Users/alvaro/Development/lab/argus-sensor
 
 # Editar telegraf.conf línea 8:
-files = ["/home/alvaro/Desktop/work/argus/git/argus-sensor/argus-data/argus-telegraf.pipe"]
+files = ["/Users/alvaro/Development/lab/argus-sensor/argus-data/argus-telegraf.pipe"]
 ```
 
 Configurar credenciales InfluxDB:
@@ -188,6 +188,63 @@ sudo journalctl -u telegraf -f | grep argus
 
 # 5. Verificar datos en InfluxDB
 influx query 'from(bucket:"argus") |> range(start: -5m) |> limit(n:10)'
+```
+
+### Generar dataset de features Parquet (opcional, para ML)
+
+Instalar dependencia en el entorno donde vayas a ejecutar el job:
+
+```bash
+python3 -m pip install -r requirements-l2.txt
+```
+
+Ejecutar generación incremental:
+
+```bash
+python3 scripts/build_l2_features.py \
+  --input-root argus-data/archive \
+  --output-root argus-data/l2_features \
+  --site dc1 \
+  --window 5m \
+  --feature-version shadowit-v1
+```
+
+Validar salida:
+
+```bash
+# Particiones generadas
+find argus-data/l2_features -maxdepth 3 -type d | sort | tail -20
+
+# Estado de archivos procesados
+cat argus-data/l2_features/_state/processed_files.json | head -40
+```
+
+### Generar scoring Shadow IT y publicar en Influx (opcional)
+
+```bash
+# 1) Scoring local (sin publicar)
+python3 scripts/score_shadowit.py \
+  --input-root argus-data/l2_features \
+  --output-root argus-data/shadowit_scores \
+  --model-config config/shadowit-model-v1.json \
+  --model-version shadowit-v1
+
+# 2) Publicar a Influx (shadowit_score + shadowit_features_top)
+export INFLUXDB_URL='http://localhost:8086'
+export INFLUXDB_ORG='tu-org'
+export INFLUXDB_BUCKET_SHADOWIT='argus-shadowit'
+export INFLUXDB_TOKEN='tu-token'
+
+python3 scripts/score_shadowit.py \
+  --publish-influx \
+  --publish-features-top
+```
+
+### Pipeline ML completo (features + scoring)
+
+```bash
+# Lee .env automaticamente (si existe) y usa esas variables.
+./scripts/run-ml-pipeline.sh
 ```
 
 ## Problemas Comunes

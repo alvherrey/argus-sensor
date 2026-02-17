@@ -1,0 +1,8 @@
+# Example cloud ASN list for L2 `cloud_asn_unique` feature.
+# One ASN per line, with or without AS prefix.
+
+15169   # Google
+16509   # Amazon
+14618   # Amazon
+8075    # Microsoft
+13335   # Cloudflare

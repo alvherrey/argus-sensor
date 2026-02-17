@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.DS_Store
+
+# Local data outputs
+argus-data/archive/
+argus-data/l2_features/
+argus-data/shadowit_scores/
+argus-data/argus-telegraf.pipe
+
+# Local env
+.env

@@ -5,8 +5,9 @@
 set -euo pipefail
 
 ARCHIVE_DIR="${ARCHIVE_DIR:-./argus-data/archive}"
-RETENTION_DAYS="${RETENTION_DAYS:-30}"
+RETENTION_DAYS="${RETENTION_DAYS:-90}"
 COMPRESS="${COMPRESS:-yes}"
+COMPRESS_AFTER_DAYS="${COMPRESS_AFTER_DAYS:-2}"
 
 echo "============================================"
 echo "Argus Archive Management"
@@ -18,8 +19,8 @@ echo "============================================"
 
 # Comprimir archivos de más de 2 días
 if [ "${COMPRESS}" = "yes" ]; then
-  echo "Comprimiendo archivos antiguos (>2 días)..."
-  find "${ARCHIVE_DIR}" -name "*.out" -type f -mtime +2 ! -name "*.gz" -exec gzip -v {} \;
+  echo "Comprimiendo archivos antiguos (>${COMPRESS_AFTER_DAYS} días)..."
+  find "${ARCHIVE_DIR}" -name "*.out" -type f -mtime +${COMPRESS_AFTER_DAYS} ! -name "*.gz" -exec gzip -v {} \;
   echo "Compresión completada"
 fi
 

@@ -1,0 +1,38 @@
+{
+  "model_version": "shadowit-v1",
+  "anomaly_threshold": 70.0,
+  "severity_thresholds": {
+    "medium": 40.0,
+    "high": 70.0
+  },
+  "weights": {
+    "unique_daddr": 18.0,
+    "unique_asn": 16.0,
+    "cloud_asn_unique": 16.0,
+    "bytes_out": 14.0,
+    "https_ratio": 12.0,
+    "quic_ratio": 8.0,
+    "port_entropy": 8.0,
+    "new_asn_ratio": 8.0
+  },
+  "scales": {
+    "unique_daddr": 50.0,
+    "unique_asn": 20.0,
+    "cloud_asn_unique": 8.0,
+    "bytes_out": 100000000.0,
+    "https_ratio": 1.0,
+    "quic_ratio": 0.6,
+    "port_entropy": 4.0,
+    "new_asn_ratio": 1.0
+  },
+  "reason_codes": {
+    "unique_daddr": "MANY_DESTINATIONS",
+    "unique_asn": "MANY_ASNS",
+    "cloud_asn_unique": "MANY_CLOUD_ASNS",
+    "bytes_out": "HIGH_EGRESS",
+    "https_ratio": "HIGH_HTTPS_RATIO",
+    "quic_ratio": "HIGH_QUIC_RATIO",
+    "port_entropy": "HIGH_PORT_ENTROPY",
+    "new_asn_ratio": "HIGH_NEW_ASN_RATIO"
+  }
+}
