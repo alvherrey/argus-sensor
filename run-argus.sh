@@ -179,9 +179,10 @@ else
 fi
 
 # Check radium if enrichment enabled
+RADIUM_PORT="${RADIUM_PORT:-562}"
 if [ "${ENABLE_ENRICHMENT:-yes}" = "yes" ]; then
-  if timeout 3 sudo docker compose exec -T argus ra -S localhost:562 -c 1 >/dev/null 2>&1; then
-    echo -e "${GREEN}✓ Stream radium respondiendo (puerto 562, con enrichment)${NC}"
+  if timeout 3 sudo docker compose exec -T argus ra -S localhost:${RADIUM_PORT} -c 1 >/dev/null 2>&1; then
+    echo -e "${GREEN}✓ Stream radium respondiendo (puerto ${RADIUM_PORT}, con enrichment)${NC}"
   else
     echo -e "${YELLOW}⚠️  Stream radium no responde aún${NC}"
   fi
@@ -195,7 +196,7 @@ echo ""
 echo "Información:"
 echo "  Interface: $IFACE"
 echo "  Argus Stream: localhost:${PORT:-561}"
-echo "  Radium Stream: localhost:562 (enriched)"
+echo "  Radium Stream: localhost:${RADIUM_PORT} (enriched)"
 echo "  Archivos: ./argus-data/archive/YYYY/MM/DD/"
 echo "  Enrichment: ${ENABLE_ENRICHMENT:-yes}"
 echo "  InfluxDB: ${ENABLE_INFLUXDB:-no}"
@@ -204,7 +205,7 @@ echo "Comandos útiles:"
 echo "  Ver logs:      sudo docker compose logs -f"
 echo "  Ver estado:    sudo docker compose ps"
 echo "  Test stream:   sudo docker compose exec argus ra -S localhost:${PORT:-561} -c 10"
-echo "  Test enrich:   sudo docker compose exec argus ra -S localhost:562 -s saddr daddr sco dco sas das -c 5"
+echo "  Test enrich:   sudo docker compose exec argus ra -S localhost:${RADIUM_PORT} -s saddr daddr sco dco sas das -c 5"
 echo "  Parar:         sudo docker compose down"
 echo ""
 echo "Documentación:"

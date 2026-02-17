@@ -141,8 +141,8 @@ docker compose exec argus bash -c 'ra -S localhost:${PORT:-561} -c 5'
 
 ```bash
 # Debe mostrar country codes (sco, dco) y ASN (sas, das)
-# radium escucha en puerto 562 (fijo)
-docker compose exec argus ra -S localhost:562 -s saddr daddr sco dco sas das -c 5
+# radium escucha en puerto ${RADIUM_PORT:-562}
+docker compose exec argus bash -c 'ra -S localhost:${RADIUM_PORT:-562} -s saddr daddr sco dco sas das -c 5'
 
 # Ejemplo de salida esperada:
 #       SrcAddr        DstAddr sco dco    sas    das
@@ -293,8 +293,8 @@ sudo systemctl restart telegraf
 **Solución:**
 
 ```bash
-# 1. Verificar radium está corriendo (puerto 562 fijo)
-docker compose exec argus ra -S localhost:562 -c 1
+# 1. Verificar radium está corriendo (puerto ${RADIUM_PORT:-562})
+docker compose exec argus bash -c 'ra -S localhost:${RADIUM_PORT:-562} -c 1'
 
 # 2. Verificar logs de rotación
 docker compose logs | grep -E 'rasplit|rastream'

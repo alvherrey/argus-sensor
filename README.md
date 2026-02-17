@@ -111,8 +111,8 @@ sudo docker compose logs -f
 # Estado de los procesos
 sudo docker compose exec argus ps aux | grep -E "argus|radium|rasplit|rastream"
 
-# Test de stream enriquecido (puerto 562)
-ra -S localhost:562 -c 10 -s saddr daddr sco dco sas das
+# Test de stream enriquecido (puerto ${RADIUM_PORT:-562})
+docker compose exec argus bash -c 'ra -S localhost:${RADIUM_PORT:-562} -c 10 -s saddr daddr sco dco sas das'
 
 # Archivos generados
 ls -lh argus-data/archive/$(date +%Y/%m/%d)/
@@ -401,7 +401,7 @@ docker compose exec argus ps aux | grep -E "rastrip|racluster|rabins"
 
 # Test manual del pipeline
 docker compose exec argus bash -c \
-  "rastrip -S localhost:562 -M dsrs='-suser,-duser' | ra -c 10"
+  "rastrip -S localhost:${RADIUM_PORT:-562} -M dsrs='-suser,-duser' | ra -c 10"
 ```
 
 ### GeoIP no funciona
@@ -415,7 +415,7 @@ ls -lh geoip-data/
 # - GeoLite2-ASN.mmdb
 
 # Test de enriquecimiento
-ra -S localhost:562 -c 5 -s saddr daddr sco dco sas das
+docker compose exec argus bash -c 'ra -S localhost:${RADIUM_PORT:-562} -c 5 -s saddr daddr sco dco sas das'
 ```
 
 ### Archivos no rotan

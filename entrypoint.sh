@@ -4,6 +4,7 @@ set -euo pipefail
 # Variables de entorno con valores por defecto
 INTERFACE="${INTERFACE:-eth0}"
 PORT="${PORT:-561}"
+RADIUM_PORT="${RADIUM_PORT:-562}"
 ROTATION_INTERVAL="${ROTATION_INTERVAL:-1d}"
 ENABLE_ENRICHMENT="${ENABLE_ENRICHMENT:-yes}"
 ENABLE_INFLUXDB="${ENABLE_INFLUXDB:-no}"
@@ -14,6 +15,7 @@ echo "Argus Sensor - Arquitectura Oficial"
 echo "========================================="
 echo "Interface: ${INTERFACE}"
 echo "Argus Port: ${PORT}"
+echo "Radium Port: ${RADIUM_PORT}"
 echo "Rotation: ${ROTATION_INTERVAL}"
 echo "Enrichment: ${ENABLE_ENRICHMENT}"
 echo "InfluxDB: ${ENABLE_INFLUXDB}"
@@ -45,15 +47,45 @@ sleep 3
 # =========================================================================
 
 if [ "${ENABLE_ENRICHMENT}" = "yes" ]; then
-  echo "[1/3] Iniciando radium como hub central (puerto 562)..."
+  # Validate required enrichment assets before starting radium.
+  for required_file in \
+    /usr/share/GeoIP/delegated-ipv4-latest \
+    /usr/share/GeoIP/GeoLite2-ASN.mmdb; do
+    if [ ! -s "${required_file}" ]; then
+      echo "ERROR: Enrichment enabled but missing file: ${required_file}"
+      echo "       Run ./download-geoip.sh in host and restart container."
+      exit 1
+    fi
+  done
+
+  echo "[1/3] Iniciando radium como hub central (puerto ${RADIUM_PORT})..."
   
   # radium recibe de argus, enriquece con classifier (via radium.conf), redistribuye
   # -S: source argus, -P: puerto de salida, -f: config file
-  radium -S localhost:${PORT} -P 562 -f /etc/radium.conf &
+  radium -S localhost:${PORT} -P ${RADIUM_PORT} -f /etc/radium.conf &
   RADIUM_PID=$!
-  sleep 3
+  sleep 2
+
+  if ! kill -0 "${RADIUM_PID}" 2>/dev/null; then
+    echo "ERROR: Radium terminó inmediatamente tras iniciar."
+    echo "       Verifica conflicto de puerto y config de classifier."
+    if command -v ss >/dev/null 2>&1; then
+      echo "       Estado de puertos (561/562):"
+      ss -ltn | grep -E ":(${PORT}|${RADIUM_PORT})\\b" || true
+    fi
+    exit 1
+  fi
+
+  # Verify access port is really listening.
+  if ! timeout 4 bash -lc "exec 3<>/dev/tcp/127.0.0.1/${RADIUM_PORT}" 2>/dev/null; then
+    echo "ERROR: Radium no abrió el puerto ${RADIUM_PORT}."
+    if command -v ss >/dev/null 2>&1; then
+      ss -ltn | grep -E ":(${PORT}|${RADIUM_PORT})\\b" || true
+    fi
+    exit 1
+  fi
   
-  echo "✓ Radium: Argus:${PORT} → radium:562 (enriquecido via RADIUM_CLASSIFIER_FILE)"
+  echo "✓ Radium: Argus:${PORT} → radium:${RADIUM_PORT} (enriquecido via RADIUM_CLASSIFIER_FILE)"
 else
   # Sin radium: acceso directo a argus
   RADIUM_PID=""
@@ -62,7 +94,7 @@ fi
 
 # Determinar puerto de stream según arquitectura
 if [ -n "${RADIUM_PID}" ]; then
-  STREAM_PORT=562
+  STREAM_PORT=${RADIUM_PORT}
 else
   STREAM_PORT=${PORT}
 fi
@@ -95,7 +127,7 @@ echo "[2/3] Iniciando ${ARCHIVER_BIN} para archivos ML..."
 ARCHIVER_PID=$!
 
 if [ "${ENABLE_ENRICHMENT}" = "yes" ]; then
-  echo "✓ Archivos ML: radium:562 → ${ARCHIVER_BIN} (payload + enrich)"
+  echo "✓ Archivos ML: radium:${RADIUM_PORT} → ${ARCHIVER_BIN} (payload + enrich)"
 else
   echo "✓ Archivos ML: argus:${PORT} → ${ARCHIVER_BIN} (primitivo)"
 fi
@@ -147,7 +179,7 @@ echo "========================================="
 echo "Estado de servicios:"
 echo "  Argus PID: ${ARGUS_PID} (puerto ${PORT})"
 if [ -n "${RADIUM_PID}" ]; then
-  echo "  Radium PID: ${RADIUM_PID} (puerto 562)"
+  echo "  Radium PID: ${RADIUM_PID} (puerto ${RADIUM_PORT})"
 fi
   echo "  ${ARCHIVER_BIN} PID: ${ARCHIVER_PID}"
 if [ -n "${INFLUXDB_PID}" ]; then

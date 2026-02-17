@@ -7,11 +7,11 @@ The Argus sensor uses **`rasplit`** (or **`rastream`** in newer argus-clients) f
 ## How it Works
 
 1. **Argus** (port 561) captures packets and generates bidirectional flows with payload
-2. **radium** (port 562) acts as central hub:
+2. **radium** (port `${RADIUM_PORT:-562}`) acts as central hub:
    - Receives stream from Argus
    - Enriches with GeoIP (country codes + ASN) via `RADIUM_CLASSIFIER_FILE`
    - Distributes to multiple consumers
-3. **rasplit/rastream** connects to radium stream (localhost:562)
+3. **rasplit/rastream** connects to radium stream (localhost:`${RADIUM_PORT:-562}`)
 4. **rasplit/rastream** writes enriched flows to files with automatic rotation
 5. Files are organized in date-based directories: `archive/YYYY/MM/DD/`
 
@@ -20,7 +20,7 @@ The Argus sensor uses **`rasplit`** (or **`rastream`** in newer argus-clients) f
 ```
 Argus (:561, primitivo+payload)
     ↓
-radium (:562, hub+enrich)
+radium (:${RADIUM_PORT:-562}, hub+enrich)
     ├→ rasplit/rastream → archive/YYYY/MM/DD/*.out (for ML)
     └→ rastrip → racluster → rabins → InfluxDB (for dashboards)
 ```
@@ -211,8 +211,8 @@ sudo docker compose exec argus ps aux | grep -E "rasplit|rastream"
 # Check logs
 sudo docker compose logs | grep -E "rasplit|rastream"
 
-# Verify radium stream (enriched data on port 562)
-ra -S localhost:562 -c 5
+# Verify radium stream (enriched data on port ${RADIUM_PORT:-562})
+docker compose exec argus bash -c 'ra -S localhost:${RADIUM_PORT:-562} -c 5'
 ```
 
 ### Wrong rotation time
@@ -258,12 +258,12 @@ rasplit -S localhost:${PORT} \
 
 **Files (for ML batch analysis):**
 ```
-Argus:561 → radium:562 (enrich) → rasplit/rastream → archive/*.out (payload+GeoIP)
+Argus:561 → radium:${RADIUM_PORT:-562} (enrich) → rasplit/rastream → archive/*.out (payload+GeoIP)
 ```
 
 **InfluxDB (for real-time dashboards):**
 ```
-Argus:561 → radium:562 (enrich) → rastrip → racluster → rabins → Telegraf → InfluxDB → Grafana
+Argus:561 → radium:${RADIUM_PORT:-562} (enrich) → rastrip → racluster → rabins → Telegraf → InfluxDB → Grafana
 ```
 
 ### Files (batch processing)
