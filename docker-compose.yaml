@@ -13,13 +13,24 @@ services:
     stop_signal: SIGINT
     stop_grace_period: 5s
     restart: "no"
+    environment:
+      - INTERFACE=${INTERFACE}
+      - PORT=${PORT:-561}
+      - ROTATION_INTERVAL=${ROTATION_INTERVAL:-1d}
+      - ENABLE_ENRICHMENT=${ENABLE_ENRICHMENT:-yes}
+      - ENABLE_INFLUXDB=${ENABLE_INFLUXDB:-no}
+      - AGGREGATION_INTERVAL=${AGGREGATION_INTERVAL:-1m}
     volumes:
-      - ./argus-data:/var/log/argus
+      - ./argus-data:/var/log/argus        # Archivos rotativos + named pipe para Telegraf
       - ./argus.conf:/etc/argus.conf:ro
+      - ./ralabel.conf:/etc/ralabel.conf:ro
+      - ./radium.conf:/etc/radium.conf:ro
+      - ./geoip-data:/usr/share/GeoIP:ro
       - ./pcap:/pcap:ro
-    command: ["-i","${INTERFACE}","-w","/var/log/argus/argus.out","-P","${PORT}","--","ip or arp"]
+      - ./entrypoint.sh:/entrypoint.sh:ro
+    entrypoint: ["/entrypoint.sh"]
     healthcheck:
-      test: ["CMD-SHELL", "bash -lc 'exec 3<>/dev/tcp/127.0.0.1/561'"]
+      test: ["CMD-SHELL", "bash -lc 'exec 3<>/dev/tcp/127.0.0.1/${PORT:-561}'"]
       interval: 30s
       timeout: 3s
       retries: 5

@@ -1,153 +1,364 @@
-# Argus Docker PoC (minimal)
+# Argus Sensor - Arquitectura Oficial para ML y Monitorización
 
-This repository contains a minimal PoC to run **Argus** in Docker.  
-It includes the essential files: `Dockerfile`, `docker-compose.yml`, `argus.conf` and `run-argus.sh`.
+Este repositorio contiene un **Argus Network Flow Sensor** con arquitectura oficial basada en la documentación de OpenArgus, diseñado para:
+- 🎯 **Batch ML** (detección de Shadow IT, anomalías, túneles)
+- 📊 **Dashboards en tiempo real** (InfluxDB + Grafana)
+- 🔒 **Análisis forense** (archivos completos con payload)
 
-> Note: commands assume Linux. For realistic network captures you should use a physical NIC connected to a switch mirror/TAP (not the host's managed Wi-Fi), unless you capture on the AP's wired side or use monitor mode.
-
----
-
-## Requirements
-- Docker and docker-compose installed.
-- A network interface for sniffing (e.g. `eth1`, or a USB-Ethernet adapter connected to a mirror/TAP port).  
-  If you use the built-in Wi-Fi, see Wi-Fi limitations below.
-
----
-
-## Minimal structure
-- `Dockerfile` — builds Argus from upstream.
-- `docker-compose.yml` — runs the image with host networking.
-- `argus.conf` — minimal example configuration.
-- `run-argus.sh` — helper script that readies the interface and launches docker-compose.
-- Folders: `argus-data/` (output) and `pcap/` (pcaps for tests).
+**Características principales:**
+- ✅ **radium** como hub central de distribución
+- ✅ Enriquecimiento GeoIP (country codes, ASN) integrado
+- ✅ Rotación automática de archivos (1h/6h/12h/1d/1w)
+- ✅ Pipeline dual: archivos completos + time-series ligera
+- ✅ Agregación temporal para reducir cardinalidad en InfluxDB
+- ✅ Captura completa: payload (256B), MACs, RTT, status updates
 
 ---
 
-## Quickstart
+## 🏗️ Arquitectura
 
-1. Create the project folder and prepare directories:
-```bash
-cd ~/Desktop/work/argus-docker
-mkdir -p argus-data pcap
-````
-
-2. Make the helper executable:
-
-```bash
-chmod +x run-argus.sh
+```
+Argus (puerto 561, primitivo + payload)
+    ↓
+radium (puerto 562, hub central)
+    └→ RADIUM_CLASSIFIER_FILE (enriquecimiento GeoIP)
+    ↓
+    ├─→ rasplit → archivos .out (COMPLETOS: payload + enrich)
+    │                ↓
+    │           Batch ML (hourly/daily/weekly)
+    │                ↓
+    │           Postgres (alertas)
+    │
+    └─→ rastrip (quita payload) → racluster (agrega) → rabins (binning 1m)
+                                        ↓
+                                   argus-data/argus-telegraf.pipe
+                                        ↓
+                                   Telegraf → InfluxDB → Grafana
 ```
 
-3. Build the image (recommended without cache to see errors):
+### Flujos de datos
+
+| Componente | Contenido | Tamaño | Retención | Uso |
+|------------|-----------|--------|-----------|-----|
+| **Archivos .out** | Headers + Payload + GeoIP | 5GB/día | 90 días | ML batch, análisis forense |
+| **InfluxDB** | Headers + GeoIP (sin payload) | 2GB/día | 30 días | Dashboards tiempo real |
+| **Postgres** | Solo alertas ML | 10MB/día | 1 año | Aplicación de alertas |
+
+---
+
+## 🚀 Quick Start
+
+### 1. Descargar bases GeoIP
 
 ```bash
-DOCKER_BUILDKIT=0 docker-compose build --no-cache --progress=plain argus
+# Opción A: Script automático (requiere cuenta MaxMind gratuita)
+export MAXMIND_LICENSE_KEY="tu_license_key"
+./download-geoip.sh
+
+# Opción B: Manual
+mkdir -p geoip-data
+curl -o geoip-data/delegated-ipv4-latest \
+  https://ftp.arin.net/pub/stats/arin/delegated-arin-extended-latest
+# Descargar GeoLite2-ASN.mmdb desde MaxMind
 ```
 
-4. Prepare the interface and start the PoC (run from the repo directory):
+### 2. Configurar variables de entorno
+
+```bash
+cp .env.example .env
+nano .env
+```
+
+```bash
+# .env
+INTERFACE=ens160
+ROTATION_INTERVAL=1d
+ENABLE_ENRICHMENT=yes
+ENABLE_INFLUXDB=no         # yes para dashboards
+AGGREGATION_INTERVAL=1m    # 30s, 1m, 5m, 15m, 1h
+```
+
+### 3. Ejecutar el sensor
 
 ```bash
 ./run-argus.sh <INTERFACE>
-# Example:
-./run-argus.sh eth1
-# Or use your Wi-Fi interface:
-./run-argus.sh wlxec086b1ee1f6
-./run-argus.sh wlo1
+# Ejemplo:
+./run-argus.sh ens160
 ```
 
-The script:
-
-* checks the interface exists,
-* brings it UP and sets promiscuous mode,
-* builds the image and starts `docker-compose` detached.
-
-5. Check status and logs:
+### 4. Verificar operación
 
 ```bash
-docker-compose ps
-docker-compose logs -f
-# or follow only the service:
-docker-compose logs -f argus
+# Logs del contenedor
+sudo docker compose logs -f
+
+# Estado de los procesos
+sudo docker compose exec argus ps aux | grep -E "argus|radium|rasplit"
+
+# Test de stream enriquecido (puerto 562)
+ra -S localhost:562 -c 10 -s saddr daddr sco dco sas das
+
+# Archivos generados
+ls -lh argus-data/archive/$(date +%Y/%m/%d)/
 ```
 
-6. Confirm Argus output files are being created:
+---
+
+## 📁 Estructura de Archivos
+
+```
+argus-data/
+└── archive/
+    └── 2026/              # Año
+        └── 02/            # Mes
+            └── 15/        # Día
+                ├── argus.2026.02.15.00.00.00.out  # Archivos completos
+                ├── argus.2026.02.15.01.00.00.out  # (payload + enrich)
+                └── ...
+```
+
+### Formato de archivos
+
+Los archivos `.out` contienen flows enriquecidos en formato binario Argus:
+- **Headers completos**: IPs, puertos, protocolo, TTL, flags, etc.
+- **Payload**: Primeros 256 bytes de aplicación (para ML)
+- **GeoIP**: Country codes (sco, dco) y ASN (sas, das)
+- **Métricas**: Packets, bytes, duración, jitter, RTT
+
+Leer con cualquier herramienta argus-clients:
 
 ```bash
-ls -lh ./argus-data
-# quick inspection with ra (run inside the container)
-sudo docker compose exec argus ra -r /var/log/argus/argus.out -s saddr daddr sport dport pkts bytes | head
+# Ver flows completos
+ra -r argus-data/archive/2026/02/15/argus.2026.02.15.12.00.00.out
+
+# Filtrar por país
+ra -r archivo.out - 'sco="CN" or dco="CN"'
+
+# Exportar a CSV para ML
+ra -r archivo.out -s saddr daddr proto dport sco dco sas das bytes pkts dur -c , > flows.csv
 ```
 
-7. Stop the PoC and clean up:
+---
+
+## ⚙️ Configuración Avanzada
+
+### Intervalos de rotación
+
+| Valor | Descripción | Archivos/día | Tamaño aprox |
+|-------|-------------|--------------|--------------|
+| `1h` | Horaria | 24 | ~200MB/archivo |
+| `6h` | Cada 6 horas | 4 | ~1.2GB/archivo |
+| `12h` | Cada 12 horas | 2 | ~2.5GB/archivo |
+| `1d` | Diaria (default) | 1 | ~5GB/archivo |
+| `1w` | Semanal | 1/7 | ~35GB/archivo |
+
+### Pipeline InfluxDB (opcional)
+
+Para habilitar dashboards en tiempo real:
 
 ```bash
-docker-compose down
-sudo ip link set dev <INTERFACE> promisc off
+# .env
+ENABLE_INFLUXDB=yes
+AGGREGATION_INTERVAL=1m
 ```
 
-## Comandos ra para probar el stream (sin fichero)
-1. 10 flujos en vivo
-ra -S localhost:561 -n -L \
-  -s "stime proto saddr sport daddr dport spkts dpkts sbytes dbytes" \
-  -c 10
+Esto activa:
+1. **rastrip**: Elimina payload (DSRs suser/duser)
+2. **racluster**: Agrega por flow key (src, dst, proto, port, geo)
+3. **rabins**: Binning temporal (reduce ingesta)
+4. **Named pipe**: `argus-data/argus-telegraf.pipe` → Telegraf
 
-2. sólo TCP/22 (SSH)
-ra -S localhost:561 -n -L 'tcp and port 22' \
-  -s "stime saddr sport daddr dport spkts dpkts sbytes dbytes" \
-  -c 10
+Configurar Telegraf en el **host**:
 
-3. sólo tráfico hacia fuera de 10.0.0.0/8  (ajusta tu CIDR)
-ra -S localhost:561 -n -L 'not (src net 10.0.0.0/8 and dst net 10.0.0.0/8)' \
-  -s "stime proto saddr sport daddr dport sbytes dbytes" \
-  -c 20
+```bash
+cp telegraf.conf /etc/telegraf/telegraf.d/argus.conf
+# IMPORTANTE: Editar la ruta absoluta del pipe en telegraf.conf
+# Ejemplo: /home/user/argus-sensor/argus-data/argus-telegraf.pipe
+vim /etc/telegraf/telegraf.d/argus.conf
+systemctl restart telegraf
+```
 
+---
 
+## 📊 Casos de Uso
 
-conectar desde mi host:
+### 1. Batch ML para detección de Shadow IT
 
-10.20.1.51:561
+```python
+#!/usr/bin/env python3
+# batch_hourly.py - Procesa archivos horarios
 
-ra -S 127.0.0.1:561 -n -T 10 -N o20 \
-     -s stime proto saddr sport daddr dport spkts dpkts sbytes dbytes \
-     -L 0
+import subprocess
+import pandas as pd
+from datetime import datetime, timedelta
 
+def process_hourly_batch(argus_file):
+    """Lee archivo con flows enriquecidos"""
+    cmd = f"ra -r {argus_file} -s saddr daddr proto dport sco dco sas das bytes pkts dur -c ,"
+    output = subprocess.check_output(cmd, shell=True, text=True)
+    df = pd.read_csv(io.StringIO(output))
+    
+    # Detección de Shadow IT
+    # 1. Servicios cloud no autorizados
+    shadow_countries = df[df['dco'].isin(['US', 'IE', 'SG'])]  # AWS, Azure, GCP
+    shadow_https = shadow_countries[shadow_countries['dport'] == 443]
+    
+    # 2. Túneles (volumen alto en puertos no estándar)
+    tunnels = df[(df['dport'] > 1024) & (df['bytes'] > 1000000)]
+    
+    # 3. Exfiltración (volumen saliente anómalo)
+    exfil = df.groupby('saddr')['bytes'].sum()
+    anomalies = exfil[exfil > exfil.quantile(0.99)]
+    
+    return shadow_https, tunnels, anomalies
 
-Install argus-client:
+# Procesar último archivo horario
+hour = datetime.now().replace(minute=0, second=0) - timedelta(hours=1)
+file_pattern = f"argus-data/archive/{hour:%Y/%m/%d}/argus.{hour:%Y.%m.%d.%H}.*.out"
+```
 
-sudo apt-get update
-sudo apt-get install -y build-essential autoconf automake libtool bison flex pkg-config libpcap-dev git
+### 2. Análisis forense con payload
 
-cd /tmp
-git clone --depth 1 https://github.com/openargus/clients.git
-cd clients
-autoreconf -fi || true
-./configure
-make -j"$(nproc)"
-sudo make install
+```bash
+# Buscar patrones específicos en payload
+ra -r archivo.out -s saddr daddr user - 'dst port 80' | grep -i "password"
 
-213.60.255.45:561
+# Detectar tunneling DNS
+ra -r archivo.out -s saddr daddr bytes pkts - 'proto udp and dst port 53 and bytes > 512'
 
-# 1) Streaming continuo en texto (sin cabecera cada X líneas)
-ra -S 127.0.0.1:561 -n -L 0
-ra -S 10.20.1.51:561 -n -L 0
-ra -S 213.60.255.45:561 -n -L 0
+# Identificar BitTorrent / P2P
+ra -r archivo.out - 'dst port range 6881-6889 or dst port 51413'
+```
 
+### 3. Dashboard queries (InfluxDB)
 
-# 2) Mismo pero con campos útiles
-ra -S 127.0.0.1:561 -n -L 0 \
-  -s stime proto saddr sport daddr dport spkts dpkts sbytes dbytes
+```sql
+-- Top 10 países de origen (última hora)
+SELECT sum(spkts) FROM argus_flows 
+WHERE time > now() - 1h 
+GROUP BY sco 
+ORDER BY sum DESC 
+LIMIT 10
 
-ra -S 213.60.255.45:561 -n -L 0 \
-  -s stime proto saddr sport daddr dport spkts dpkts sbytes dbytes
+-- Tráfico por ASN
+SELECT sum(sbytes), sum(dbytes) FROM argus_flows
+WHERE time > now() - 24h
+GROUP BY das, time(5m)
 
-# 3) CSV (delimitador coma), cabecera una sola vez
-ra -S 127.0.0.1:561 -n -L -1 -c , \
-  -s stime ltime proto saddr sport daddr dport spkts dpkts sbytes dbytes
+-- Alertas de países sospechosos
+SELECT * FROM argus_flows
+WHERE (sco IN ('CN', 'RU', 'KP') OR dco IN ('CN', 'RU', 'KP'))
+AND time > now() - 1h
+```
 
-# 4) JSON (ideal para Python)
-ra -S 127.0.0.1:561 -n -L -1 -M json
+---
 
+## 🧹 Gestión de Archivos
 
+### Limpieza automática
 
+El script `cleanup-archives.sh` gestiona archivos antiguos:
 
-diagnosticar en el firewall
-diagnose sniffer packet any 'port 561' 4
+```bash
+# Default: comprimir archivos >2 días, eliminar archivos >30 días
+./cleanup-archives.sh
+
+# Retención personalizada (7 días)
+RETENTION_DAYS=7 ./cleanup-archives.sh
+
+# Sin compresión
+COMPRESS=no RETENTION_DAYS=30 ./cleanup-archives.sh
+```
+
+### Cron para limpieza diaria
+
+```bash
+# Ejecutar a las 3 AM diariamente
+0 3 * * * /path/to/argus-sensor/cleanup-archives.sh >> /var/log/argus-cleanup.log 2>&1
+```
+
+### Políticas de retención recomendadas
+
+| Tipo de archivo | Compresión | Retención | Uso |
+|-----------------|------------|-----------|-----|
+| Raw (últimos 7 días) | No | 7 días | Análisis rápido, reprocessing |
+| Comprimidos | gzip -9 | 90 días | ML batch, investigaciones |
+| Agregados diarios | No | 1 año | Tendencias, baseline |
+
+---
+
+## 🔧 Troubleshooting
+
+### Sensor no captura tráfico
+
+```bash
+# Verificar interfaz existe
+ip link show <INTERFACE>
+
+# Verificar permisos
+sudo docker compose exec argus argus -i <INTERFACE> -P 0 -d
+
+# Verificar modo promiscuo
+ip link show <INTERFACE> | grep PROMISC
+```
+
+### Pipeline InfluxDB no envía datos
+
+```bash
+# Verificar named pipe existe en volumen compartido
+ls -l argus-data/argus-telegraf.pipe
+
+# Verificar procesos
+docker compose exec argus ps aux | grep -E "rastrip|racluster|rabins"
+
+# Test manual del pipeline
+docker compose exec argus bash -c \
+  "rastrip -S localhost:562 -M dsrs='-suser,-duser' | ra -c 10"
+```
+
+### GeoIP no funciona
+
+```bash
+# Verificar bases de datos
+ls -lh geoip-data/
+
+# Debe contener:
+# - delegated-ipv4-latest
+# - GeoLite2-ASN.mmdb
+
+# Test de enriquecimiento
+ra -S localhost:562 -c 5 -s saddr daddr sco dco sas das
+```
+
+### Archivos no rotan
+
+```bash
+# Verificar proceso rasplit
+docker compose exec argus ps aux | grep rasplit
+
+# Ver logs
+docker compose logs -f | grep rasplit
+
+# Verificar permisos directorio
+ls -ld argus-data/archive/
+```
+
+---
+
+## 📚 Referencias
+
+- [Argus Official Documentation](https://openargus.org/using-argus)
+- [Argus Clients Man Pages](https://openargus.org/documentation)
+- [radium Configuration](https://openargus.org/oldsite/man/man8/radium.8.html)
+- [ralabel GeoIP](https://openargus.org/using-argus#ralabel---inserting-geolocation-data-into-argus-records)
+- [MaxMind GeoLite2](https://dev.maxmind.com/geoip/geolite2-free-geolocation-data)
+
+---
+
+## 📄 License
+
+MIT License - Ver archivo LICENSE para detalles.
+
+## 🤝 Contribuciones
+
+Pull requests son bienvenidos. Para cambios mayores, por favor abre un issue primero.
