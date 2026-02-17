@@ -288,7 +288,7 @@ sudo systemctl restart telegraf
 
 ### ❌ No se generan archivos .out
 
-**Causa:** rasplit no está conectándose a radium.
+**Causa:** proceso de rotación (`rasplit` o `rastream`) no está conectándose a radium.
 
 **Solución:**
 
@@ -296,8 +296,8 @@ sudo systemctl restart telegraf
 # 1. Verificar radium está corriendo (puerto 562 fijo)
 docker compose exec argus ra -S localhost:562 -c 1
 
-# 2. Verificar logs de rasplit
-docker compose logs | grep rasplit
+# 2. Verificar logs de rotación
+docker compose logs | grep -E 'rasplit|rastream'
 
 # 3. Verificar permisos
 ls -ld argus-data/archive/

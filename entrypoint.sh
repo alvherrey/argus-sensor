@@ -67,25 +67,37 @@ else
   STREAM_PORT=${PORT}
 fi
 
+# Select archive splitter command based on installed argus-clients version.
+# Newer releases moved rasplit functionality into rastream.
+if command -v rasplit >/dev/null 2>&1; then
+  ARCHIVER_BIN="rasplit"
+elif command -v rastream >/dev/null 2>&1; then
+  ARCHIVER_BIN="rastream"
+else
+  echo "ERROR: Neither 'rasplit' nor 'rastream' is available in PATH"
+  echo "       Verify argus-clients installation in the image."
+  exit 1
+fi
+
 # =========================================================================
 # PIPELINE 1: Archivos completos (Ground Truth + ML)
 # =========================================================================
-# rasplit lee de radium (enriquecido) o argus (primitivo)
+# rasplit/rastream lee de radium (enriquecido) o argus (primitivo)
 # Archivos contienen: payload + headers + country codes + ASN
 # Uso: Batch ML, análisis forense, retraining
 # =========================================================================
 
-echo "[2/3] Iniciando rasplit para archivos ML..."
-rasplit -S localhost:${STREAM_PORT} \
+echo "[2/3] Iniciando ${ARCHIVER_BIN} para archivos ML..."
+"${ARCHIVER_BIN}" -S localhost:${STREAM_PORT} \
   -M time ${ROTATION_INTERVAL} \
   -w "/var/log/argus/archive/%Y/%m/%d/argus.%Y.%m.%d.%H.%M.%S.out" \
   -Z b &
-RASPLIT_PID=$!
+ARCHIVER_PID=$!
 
 if [ "${ENABLE_ENRICHMENT}" = "yes" ]; then
-  echo "✓ Archivos ML: radium:562 → rasplit (payload + enrich)"
+  echo "✓ Archivos ML: radium:562 → ${ARCHIVER_BIN} (payload + enrich)"
 else
-  echo "✓ Archivos ML: argus:${PORT} → rasplit (primitivo)"
+  echo "✓ Archivos ML: argus:${PORT} → ${ARCHIVER_BIN} (primitivo)"
 fi
 
 # =========================================================================
@@ -137,7 +149,7 @@ echo "  Argus PID: ${ARGUS_PID} (puerto ${PORT})"
 if [ -n "${RADIUM_PID}" ]; then
   echo "  Radium PID: ${RADIUM_PID} (puerto 562)"
 fi
-  echo "  Rasplit PID: ${RASPLIT_PID}"
+  echo "  ${ARCHIVER_BIN} PID: ${ARCHIVER_PID}"
 if [ -n "${INFLUXDB_PID}" ]; then
   echo "  Pipeline InfluxDB PID: ${INFLUXDB_PID} (named pipe → Telegraf)"
 fi
@@ -159,9 +171,9 @@ cleanup() {
     wait ${INFLUXDB_PID} 2>/dev/null || true
   fi
   
-  echo "  Deteniendo rasplit..."
-  kill -SIGTERM ${RASPLIT_PID} 2>/dev/null || true
-  wait ${RASPLIT_PID} 2>/dev/null || true
+  echo "  Deteniendo ${ARCHIVER_BIN}..."
+  kill -SIGTERM ${ARCHIVER_PID} 2>/dev/null || true
+  wait ${ARCHIVER_PID} 2>/dev/null || true
   
   if [ -n "${RADIUM_PID}" ]; then
     echo "  Deteniendo radium..."
@@ -191,8 +203,8 @@ while true; do
     exit 1
   fi
   
-  if ! kill -0 ${RASPLIT_PID} 2>/dev/null; then
-    echo "ERROR: Rasplit ha terminado inesperadamente"
+  if ! kill -0 ${ARCHIVER_PID} 2>/dev/null; then
+    echo "ERROR: ${ARCHIVER_BIN} ha terminado inesperadamente"
     exit 1
   fi
   

@@ -23,7 +23,7 @@ Argus (puerto 561, primitivo + payload)
 radium (puerto 562, hub central)
     └→ RADIUM_CLASSIFIER_FILE (enriquecimiento GeoIP)
     ↓
-    ├─→ rasplit → archivos .out (COMPLETOS: payload + enrich)
+    ├─→ rasplit/rastream → archivos .out (COMPLETOS: payload + enrich)
     │                ↓
     │      build_l2_features.py (opcional) → Parquet de features
     │                ↓
@@ -109,7 +109,7 @@ AGGREGATION_INTERVAL=1m    # 30s, 1m, 5m, 15m, 1h
 sudo docker compose logs -f
 
 # Estado de los procesos
-sudo docker compose exec argus ps aux | grep -E "argus|radium|rasplit"
+sudo docker compose exec argus ps aux | grep -E "argus|radium|rasplit|rastream"
 
 # Test de stream enriquecido (puerto 562)
 ra -S localhost:562 -c 10 -s saddr daddr sco dco sas das
@@ -421,11 +421,11 @@ ra -S localhost:562 -c 5 -s saddr daddr sco dco sas das
 ### Archivos no rotan
 
 ```bash
-# Verificar proceso rasplit
-docker compose exec argus ps aux | grep rasplit
+# Verificar proceso de rotación (rasplit o rastream)
+docker compose exec argus ps aux | grep -E "rasplit|rastream"
 
-# Ver logs
-docker compose logs -f | grep rasplit
+# Ver logs de rotación
+docker compose logs -f | grep -E "rasplit|rastream"
 
 # Verificar permisos directorio
 ls -ld argus-data/archive/

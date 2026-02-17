@@ -100,7 +100,7 @@ docker compose down
 
 1. **Nuevo componente:** radium como hub central (puerto 562)
    - Antes: Argus → rasplit directo
-   - Ahora: Argus:561 → radium:562 → [rasplit | rastrip]
+   - Ahora: Argus:561 → radium:562 → [rasplit/rastream | rastrip]
 
 2. **Prerequisito GeoIP:** Enrichment requiere bases descargadas
    - Script: `./download-geoip.sh`

@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Argus sensor uses **`rasplit`** for automatic file rotation based on time intervals, integrated with **radium** as central hub.
+The Argus sensor uses **`rasplit`** (or **`rastream`** in newer argus-clients) for automatic file rotation based on time intervals, integrated with **radium** as central hub.
 
 ## How it Works
 
@@ -11,8 +11,8 @@ The Argus sensor uses **`rasplit`** for automatic file rotation based on time in
    - Receives stream from Argus
    - Enriches with GeoIP (country codes + ASN) via `RADIUM_CLASSIFIER_FILE`
    - Distributes to multiple consumers
-3. **rasplit** connects to radium stream (localhost:562)
-4. **rasplit** writes enriched flows to files with automatic rotation
+3. **rasplit/rastream** connects to radium stream (localhost:562)
+4. **rasplit/rastream** writes enriched flows to files with automatic rotation
 5. Files are organized in date-based directories: `archive/YYYY/MM/DD/`
 
 ## Architecture
@@ -21,7 +21,7 @@ The Argus sensor uses **`rasplit`** for automatic file rotation based on time in
 Argus (:561, primitivo+payload)
     ↓
 radium (:562, hub+enrich)
-    ├→ rasplit → archive/YYYY/MM/DD/*.out (for ML)
+    ├→ rasplit/rastream → archive/YYYY/MM/DD/*.out (for ML)
     └→ rastrip → racluster → rabins → InfluxDB (for dashboards)
 ```
 
@@ -132,14 +132,14 @@ Files compress well (3-4:1 ratio):
 ### Automatic cleanup script
 
 ```bash
-# Compress old files and delete after 30 days
+# Compress old files and delete after 90 days
 ./cleanup-archives.sh
 
 # Custom retention
 RETENTION_DAYS=7 ./cleanup-archives.sh
 
 # Only delete, no compression
-COMPRESS=no RETENTION_DAYS=30 ./cleanup-archives.sh
+COMPRESS=no RETENTION_DAYS=90 ./cleanup-archives.sh
 ```
 
 ### Cron setup
@@ -205,11 +205,11 @@ ra -r argus-data/archive/2026/02/15/*.out -t 2026/02/15.14:00:00-2026/02/15.16:0
 ### Files not rotating
 
 ```bash
-# Check rasplit is running
-sudo docker compose exec argus ps aux | grep rasplit
+# Check archive rotation process is running
+sudo docker compose exec argus ps aux | grep -E "rasplit|rastream"
 
 # Check logs
-sudo docker compose logs | grep rasplit
+sudo docker compose logs | grep -E "rasplit|rastream"
 
 # Verify radium stream (enriched data on port 562)
 ra -S localhost:562 -c 5
@@ -242,7 +242,7 @@ find argus-data/archive -name "*.out" -exec gzip {} \;
 
 ## Advanced: Custom Rotation Logic
 
-Edit `entrypoint.sh` to customize rasplit parameters:
+Edit `entrypoint.sh` to customize rotation parameters (`rasplit`/`rastream`):
 
 ```bash
 # Example: 5-minute rotation
@@ -258,7 +258,7 @@ rasplit -S localhost:${PORT} \
 
 **Files (for ML batch analysis):**
 ```
-Argus:561 → radium:562 (enrich) → rasplit → archive/*.out (payload+GeoIP)
+Argus:561 → radium:562 (enrich) → rasplit/rastream → archive/*.out (payload+GeoIP)
 ```
 
 **InfluxDB (for real-time dashboards):**
@@ -276,4 +276,3 @@ Archive files → Python/Spark → Feature extraction → ML models
 Stream: Real-time alerting
 Files: Deep analysis, training, forensics
 ```
-
