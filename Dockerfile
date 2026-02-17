@@ -23,9 +23,11 @@ RUN ./configure || (echo "clients configure failed - see config.log" && tail -n 
 RUN make -j$(nproc) && make install
 
 RUN mkdir -p /var/log/argus /pcap /etc/argus && chmod 755 /var/log/argus
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 VOLUME ["/var/log/argus","/pcap","/etc/argus"]
 EXPOSE 561/tcp
 
 STOPSIGNAL SIGINT
-ENTRYPOINT ["argus"]
-CMD ["-i","eth0","-w","/var/log/argus/argus.out","-P","561"]
+ENTRYPOINT ["/entrypoint.sh"]
+CMD []

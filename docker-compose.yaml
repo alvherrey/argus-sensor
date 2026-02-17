@@ -17,7 +17,9 @@ services:
       - ./argus-data:/var/log/argus
       - ./argus.conf:/etc/argus.conf:ro
       - ./pcap:/pcap:ro
-    command: ["-i","${INTERFACE}","-w","/var/log/argus/argus.out","-P","${PORT}","--","ip or arp"]
+    environment:
+      - INTERFACE=${INTERFACE:-any}
+      - PORT=${PORT:-561}
     healthcheck:
       test: ["CMD-SHELL", "bash -lc 'exec 3<>/dev/tcp/127.0.0.1/561'"]
       interval: 30s

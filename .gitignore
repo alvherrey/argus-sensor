@@ -1,0 +1,21 @@
+# Datos generados por Argus (volúmenes)
+argus-data/argus.out
+argus-data/archive/
+argus-data/*.log
+argus-data/*.pipe
+
+# GeoIP databases
+geoip-data/
+
+# PCAP files
+pcap/
+
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+
+# Environment
+.env
