@@ -24,9 +24,10 @@ RUN make -j$(nproc) && make install
 
 RUN mkdir -p /var/log/argus /pcap /etc/argus && chmod 755 /var/log/argus
 COPY entrypoint.sh /entrypoint.sh
+COPY radium.conf /etc/radium.conf
 RUN chmod +x /entrypoint.sh
 VOLUME ["/var/log/argus","/pcap","/etc/argus"]
-EXPOSE 561/tcp
+EXPOSE 561/tcp 562/tcp
 
 STOPSIGNAL SIGINT
 ENTRYPOINT ["/entrypoint.sh"]
