@@ -4,7 +4,7 @@ This document explains how to connect to the remote Argus flow sensor and read
 real-time network telemetry streams for further processing and analytics.
 
 Sensor Public IP: **213.60.255.45**  
-Argus Server Port: **561**
+Radium Public Port: **562**
 
 The container image provides both:
 - **Argus Server binary** (not needed for the client use case)
@@ -41,20 +41,20 @@ You will now be inside the container shell.
 ### Human-readable output
 
 ```bash
-ra -S 213.60.255.45:561 -n -L 0 \
+ra -S 213.60.255.45:562 -n -L 0 \
   -s stime proto saddr sport daddr dport spkts dpkts sbytes dbytes
 ```
 
 ### JSON Output (for ML / data ingestion)
 
 ```bash
-ra -S 213.60.255.45:561 -n -M json
+ra -S 213.60.255.45:562 -n -M json
 ```
 
 ### Poll test (should exit with code 0 if OK)
 
 ```bash
-ra -S 213.60.255.45:561 -M poll -D 2 ; echo $?
+ra -S 213.60.255.45:562 -M poll -D 2 ; echo $?
 ```
 
 Expected output:
@@ -68,7 +68,7 @@ Expected output:
 ## 4. Example: Stream Only DNS Traffic
 
 ```bash
-ra -S 213.60.255.45:561 -n -L - udp port 53
+ra -S 213.60.255.45:562 -n -L - udp port 53
 ```
 
 ---
@@ -89,5 +89,5 @@ You can run `ra` directly:
 sudo docker run --rm -it \
   --entrypoint ra \
   roalt67184/argus:20251027 \
-  -S 213.60.255.45:561 -n -L
+  -S 213.60.255.45:562 -n -L
 ```
